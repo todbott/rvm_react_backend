@@ -1,105 +1,157 @@
-from tensorflow.keras.models import Sequential, load_model
-from tensorflow.keras.preprocessing.text import Tokenizer
-import re
-import numpy as np
-import pandas as pd
+import tensorflow as tf
+from tensorflow.keras.layers.experimental import preprocessing
 
 from google.cloud import storage
 
+class MyModel(tf.keras.Model):
+  def __init__(self, vocab_size, embedding_dim, rnn_units):
+    super().__init__(self)
+    self.embedding = tf.keras.layers.Embedding(vocab_size, embedding_dim)
+    self.gru = tf.keras.layers.GRU(rnn_units,
+                                   return_sequences=True,
+                                   return_state=True)
+    self.dense = tf.keras.layers.Dense(vocab_size)
 
+  def call(self, inputs, states=None, return_state=False, training=False):
+    x = inputs
+    x = self.embedding(x, training=training)
+    if states is None:
+      states = self.gru.get_initial_state(x)
+    x, states = self.gru(x, initial_state=states, training=training)
+    x = self.dense(x, training=training)
 
-def clean_text(sentence):
-  sentence = sentence.lower()
-  sentence = re.sub(r'\[.*?\]', "", sentence) 
-  sentence = re.sub(r"\u2005", "", sentence)
-
-  sentence = re.sub(r"’", "\'", sentence) 
-  sentence = re.sub(r"‘", "\'", sentence)
-  sentence = re.sub(r"i'm", "i am", sentence)
-  sentence = re.sub(r"its", "it is", sentence)
-  sentence = re.sub(r"he's", "he is", sentence)
-  sentence = re.sub(r"she's", "she is", sentence)
-  sentence = re.sub(r"it's", "it is", sentence)
-  sentence = re.sub(r"that's", "that is", sentence)
-  sentence = re.sub(r"what's", "what is", sentence)
-  sentence = re.sub(r"where's", "where is", sentence)
-  sentence = re.sub(r"there's", "there is", sentence)
-  sentence = re.sub(r"who's", "who is", sentence)
-  sentence = re.sub(r"how's", "how is", sentence)
-  sentence = re.sub(r"\'ll", " will", sentence)
-  sentence = re.sub(r"\'ve", " have", sentence)
-  sentence = re.sub(r"\'re", " are", sentence)
-  sentence = re.sub(r"\'d", " would", sentence)
-  sentence = re.sub(r"won't", "will not", sentence)
-  sentence = re.sub(r"can't", "cannot", sentence)
-  sentence = re.sub(r"n't", " not", sentence)
-  sentence = re.sub(r"n'", "ng", sentence)
-  sentence = re.sub(r"\'bout", "about", sentence)
-  sentence = re.sub(r"'til", "until", sentence)
-  sentence = re.sub(r"c'mon", "come on", sentence)
-  sentence = re.sub("\n", " ", sentence)
-
-  sentence = re.sub(r"\u2005", "", sentence)
-  sentence = re.sub("[-*/()\"’‘'#/@;:<>{}`+=~|.!?,]", "", sentence) 
-  sentence = re.sub(r"'", "", sentence)
-  sentence = re.sub(r"\t", "", sentence)
-  sentence = re.sub(r"  ", " ", sentence)
-  sentence = re.sub(r"  ", " ", sentence)
+    if return_state:
+      return x, states
+    else:
+      return x
   
-  return sentence
-
-def download_blob(bucket_name, source_blob_name, destination_file_name):
-    """Downloads a blob from the bucket."""
-    storage_client = storage.Client()
-    bucket = storage_client.get_bucket(bucket_name)
-    blob = bucket.blob(source_blob_name)
-
-    blob.download_to_filename(destination_file_name)
-
-    print('Blob {} downloaded to {}.'.format(
-        source_blob_name,
-        destination_file_name))
 
 
-download_blob('rvm_models', 'rvcsv.csv', '/tmp/rvcsv.csv')
-lines = pd.read_csv('/tmp/rvcsv.csv',index_col=0)
+class OneStep(tf.keras.Model):
+  def __init__(self, model, chars_from_ids, ids_from_chars, temperature=1.0):
+    super().__init__()
+    self.temperature = temperature
+    self.model = model
+    self.chars_from_ids = chars_from_ids
+    self.ids_from_chars = ids_from_chars
 
-tokenizer = Tokenizer()
-tokenizer.fit_on_texts(lines.lines)
-word2idx = tokenizer.word_index
-idx2word = {value: key for key, value in word2idx.items()}
+    # Create a mask to prevent "[UNK]" from being generated.
+    skip_ids = self.ids_from_chars(['[UNK]'])[:, None]
+    sparse_mask = tf.SparseTensor(
+        # Put a -inf at each bad index.
+        values=[-float('inf')]*len(skip_ids),
+        indices=skip_ids,
+        # Match the shape to the vocabulary
+        dense_shape=[len(ids_from_chars.get_vocabulary())])
+    self.prediction_mask = tf.sparse.to_dense(sparse_mask)
 
-vocab_size = len(tokenizer.word_index) + 1
+  @tf.function
+  def generate_one_step(self, inputs, states=None):
+    # Convert strings to token IDs.
+    input_chars = tf.strings.unicode_split(inputs, 'UTF-8')
+    input_ids = self.ids_from_chars(input_chars).to_tensor()
 
-word2idx["<pad>"] = 0
-idx2word[0] = "<pad>"
+    # Run the model.
+    # predicted_logits.shape is [batch, char, next_char_logits]
+    predicted_logits, states = self.model(inputs=input_ids, states=states,
+                                          return_state=True)
+    # Only use the last prediction.
+    predicted_logits = predicted_logits[:, -1, :]
+    predicted_logits = predicted_logits/self.temperature
+    # Apply the prediction mask: prevent "[UNK]" from being generated.
+    predicted_logits = predicted_logits + self.prediction_mask
 
-def generate(request):
+    # Sample the output logits to generate token IDs.
+    predicted_ids = tf.random.categorical(predicted_logits, num_samples=1)
+    predicted_ids = tf.squeeze(predicted_ids, axis=-1)
 
-    request_json = request.get_json()
-    if request.args and 'word' in request.args:
-        word = request.args.get('word')
-        length = request.args.get('length')
-    elif request_json and 'word' in request_json:
-        word = request_json['word']
-        length = request_json['length']
+    # Convert from token ids to characters
+    predicted_chars = self.chars_from_ids(predicted_ids)
 
-    download_blob('rvm_models', 'model.h5', '/tmp/model.h5')
-    model = load_model("/tmp/model.h5")
-    word = clean_text(word)
-    inputs = np.zeros((1, 1))
-    inputs[0, 0] = word2idx[word]
-    count = 1
-    returnString = word
-    while count <= int(length):
-        pred = model.predict(inputs)
-        word = np.argmax(pred)
-        if word >= vocab_size:
-            word = vocab_size - 1
+    # Return the characters and model state.
+    return predicted_chars, states
 
-        inputs[0, 0] = word
+def cors_enabled_function(request):
+
+    request_json = request.get_json(silent=True)
+    request_args = request.args
+
+    # For more information about CORS and CORS preflight requests, see:
+    # https://developer.mozilla.org/en-US/docs/Glossary/Preflight_request
+
+    # Set CORS headers for the preflight request
+    if request.method == 'OPTIONS':
+        # Allows GET requests from any origin with the Content-Type
+        # header and caches preflight response for an 3600s
+        headers = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET',
+            'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Max-Age': '3600'
+        }
+
+        return ('', 204, headers)
+
+    else:
+
+        if request_json and 'word' in request_json:
+            word = request_json['word']
+            length = request_json['length']
+        elif request_args and 'word' in request_args:
+            word = request_args('word')
+            length = request_args('length')
+
+
+
+
+        returnString = ""
+
+        client = storage.Client()
         
-        returnString = returnString  + " " + idx2word[word]
-        count += 1
-    return returnString
+        bucket = client.get_bucket('one_step')
+        blob = bucket.blob('mw.h5')
+        blob.download_to_filename('/tmp/mw.h5')
+        
+        model = MyModel(
+        # Be sure the vocabulary size matches the `StringLookup` layers.
+        vocab_size=79,
+        embedding_dim=256,
+        rnn_units=1024)
+        
+        
+        
+        
+        loss = tf.losses.SparseCategoricalCrossentropy(from_logits=True)
+        model.compile(optimizer='adam', loss=loss)
+        
+        
+        vocab = ['\r', ' ', '!',  '#', "'", '(', ')', ',', '-', '.', '0', '1', '3', '4', '5', '6', '7', '8', '9', ':', ';', '?', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '_', '`', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '{', '°']
+        ids_from_chars = preprocessing.StringLookup(
+            vocabulary=list(vocab), mask_token=None)
+        chars_from_ids = tf.keras.layers.experimental.preprocessing.StringLookup(
+            vocabulary=ids_from_chars.get_vocabulary(), invert=True, mask_token=None)
+        
+        one_step_reloaded = OneStep(model, chars_from_ids, ids_from_chars)
+        one_step_reloaded.compile(optimizer='adam', loss=loss)
+        one_step_reloaded.generate_one_step(['a'], states=None)
+        one_step_reloaded.built = True
+        one_step_reloaded.load_weights('/tmp/mw.h5')
+
+        states = None
+        next_char = tf.constant([word])
+        result = [next_char]
+
+        for n in range(int(length)):
+          next_char, states = one_step_reloaded.generate_one_step(next_char, states=states)
+          result.append(next_char)
+
+        returnString = tf.strings.join(result)[0].numpy().decode("utf-8")
+
+        # Set CORS headers for the main request
+        headers = {
+            'Access-Control-Allow-Origin': '*'
+        }
+            
+        
+        return (returnString, 200, headers)
 
