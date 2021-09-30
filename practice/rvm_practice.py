@@ -20,6 +20,7 @@ from tensorflow.keras.layers.experimental import preprocessing
 from google.oauth2 import service_account
 from google.cloud import storage
 
+skey_location = "C:\\Users\\Gillies\\Desktop\\201015\\mk_flexible_env(3)\\analog-context-251208-2b5a423e71e8.json"
 scredentials = service_account.Credentials.from_service_account_file(skey_location)
 client = storage.Client("analog-context-251208", scredentials)
 
@@ -124,7 +125,7 @@ blob.download_to_filename('tmp/mw.h5')
 
 model = MyModel(
 # Be sure the vocabulary size matches the `StringLookup` layers.
-vocab_size=79,
+vocab_size=57,
 embedding_dim=256,
 rnn_units=1024)
 
@@ -135,7 +136,7 @@ loss = tf.losses.SparseCategoricalCrossentropy(from_logits=True)
 model.compile(optimizer='adam', loss=loss)
 
 
-vocab = ['\r', ' ', '!',  '#', "'", '(', ')', ',', '-', '.', '0', '1', '3', '4', '5', '6', '7', '8', '9', ':', ';', '?', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '_', '`', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '{', '°']
+vocab = ['\n', '\r', ' ', '$', '%', '&', "'", '*', '+', ',', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ';', '<', '=', '>', '@', 'A', 'E', 'M', 'N', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '×']
 ids_from_chars = preprocessing.StringLookup(
     vocabulary=list(vocab), mask_token=None)
 chars_from_ids = tf.keras.layers.experimental.preprocessing.StringLookup(
@@ -186,7 +187,7 @@ one_step_reloaded.load_weights('tmp/mw.h5')
 # one_step_reloaded = tf.saved_model.load('tmp/one_step')
 
 states = None
-next_char = tf.constant(['ROMEO:'])
+next_char = tf.constant(['A large'])
 result = [next_char]
 
 for n in range(1000):

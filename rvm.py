@@ -12,6 +12,13 @@ import numpy as np
 import os
 import time
 
+from google.cloud import storage
+from google.oauth2 import service_account
+
+skey_location = "C:\\Users\\Gillies\\Desktop\\201015\\mk_flexible_env(3)\\analog-context-251208-2b5a423e71e8.json"
+scredentials = service_account.Credentials.from_service_account_file(skey_location)
+client = storage.Client("analog-context-251208", scredentials)
+
 class MyModel(tf.keras.Model):
   def __init__(self, vocab_size, embedding_dim, rnn_units):
     super().__init__(self)
@@ -82,7 +89,7 @@ class OneStep(tf.keras.Model):
 
 
 # Read, then decode for py2 compat.
-text = open('C://Users//Gillies//Desktop/rvm_googleCloud//thechroniclesofnarnia.txt', 'rb').read().decode(encoding='utf-8')
+text = open('C://Users//Gillies//Desktop/rvm_googleCloud//small_set.txt', 'rb').read().decode(encoding='utf-8')
 # length of text is the number of characters in it
 print(f'Length of text: {len(text)} characters')
 
@@ -165,7 +172,7 @@ rnn_units=rnn_units)
 loss = tf.losses.SparseCategoricalCrossentropy(from_logits=True)
 model.compile(optimizer='adam', loss=loss)
 
-EPOCHS = 10
+EPOCHS = 50
 
 history = model.fit(dataset, epochs=EPOCHS)
 
@@ -186,6 +193,12 @@ print(result[0].numpy().decode('utf-8'), '\n\n' + '_'*80)
 print('\nRun time:', end - start)
 
 one_step_model.save_weights('mw.h5') 
+
+# Upload the h5 file to google cloud storage, so I don't have to do it manually
+bucket = client.get_bucket('one_step')
+dest_blob = bucket.blob('mw.h5')
+dest_blob.upload_from_filename('mw.h5')
+
 
 # --- used to save with a different method, but it was not compatible
 # --- with cloud functions, so I had to choose a different method

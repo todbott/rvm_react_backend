@@ -114,7 +114,7 @@ def cors_enabled_function(request):
         
         model = MyModel(
         # Be sure the vocabulary size matches the `StringLookup` layers.
-        vocab_size=79,
+        vocab_size=57,
         embedding_dim=256,
         rnn_units=1024)
         
@@ -125,7 +125,8 @@ def cors_enabled_function(request):
         model.compile(optimizer='adam', loss=loss)
         
         
-        vocab = ['\r', ' ', '!',  '#', "'", '(', ')', ',', '-', '.', '0', '1', '3', '4', '5', '6', '7', '8', '9', ':', ';', '?', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '_', '`', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '{', '°']
+        vocab = vocab = ['\n', '\r', ' ', '$', '%', '&', "'", '*', '+', ',', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ';', '<', '=', '>', '@', 'A', 'E', 'M', 'N', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '×']
+
         ids_from_chars = preprocessing.StringLookup(
             vocabulary=list(vocab), mask_token=None)
         chars_from_ids = tf.keras.layers.experimental.preprocessing.StringLookup(
