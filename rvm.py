@@ -195,7 +195,7 @@ print('\nRun time:', end - start)
 one_step_model.save_weights('mw.h5') 
 
 # Upload the h5 file to google cloud storage, so I don't have to do it manually
-bucket = client.get_bucket('one_step')
+bucket = client.get_bucket('rvm-model')
 dest_blob = bucket.blob('mw.h5')
 dest_blob.upload_from_filename('mw.h5')
 

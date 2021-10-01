@@ -5,8 +5,6 @@ Created on Tue Sep 28 20:48:43 2021
 @author: Gillies
 """
 
-skey_location = "C:\\Users\\Gillies\\Desktop\\201015\\mk_flexible_env(3)\\analog-context-251208-2b5a423e71e8.json"
-
 from google.oauth2 import service_account
 from google.cloud import storage
 from googleapiclient.discovery import build
@@ -20,7 +18,7 @@ from tensorflow.keras.layers.experimental import preprocessing
 from google.oauth2 import service_account
 from google.cloud import storage
 
-skey_location = "C:\\Users\\Gillies\\Desktop\\201015\\mk_flexible_env(3)\\analog-context-251208-2b5a423e71e8.json"
+skey_location = "hotaru-kanri-38df8cf3173f.json"
 scredentials = service_account.Credentials.from_service_account_file(skey_location)
 client = storage.Client("analog-context-251208", scredentials)
 
@@ -116,7 +114,7 @@ class OneStep(tf.keras.Model):
 
 
 
-bucket = client.get_bucket('one_step')
+bucket = client.get_bucket('rvm-model')
 blob = bucket.blob('mw.h5')
 blob.download_to_filename('tmp/mw.h5')
 
